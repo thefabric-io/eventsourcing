@@ -2,7 +2,6 @@ package eventsourcing
 
 import (
 	"encoding/json"
-	dc "github.com/barkimedes/go-deepcopy"
 )
 
 // AggregateState is an interface defining methods that should be implemented by any state that is part of an aggregate.
@@ -42,11 +41,16 @@ type Aggregate[S AggregateState] struct {
 
 // Clone creates a deep copy of the Aggregate.
 func (a *Aggregate[S]) Clone() *Aggregate[S] {
+	var clone S
+
+	m, _ := json.Marshal(a.state)
+	_ = json.Unmarshal(m, &clone)
+
 	return &Aggregate[S]{
 		id:      a.id,
 		version: a.version,
 		_type:   a.state.Type(),
-		state:   dc.MustAnything(a.state).(S),
+		state:   clone,
 	}
 }
 
@@ -60,9 +64,22 @@ func (a *Aggregate[S]) Must(ii ...func(*Aggregate[S]) error) {
 	a.Invariants = ii
 }
 
-// Check checks all invariants of the aggregate and returns errors for every failed Invariants. Check returns nil if all
+
+// Check checks all invariants of the aggregate and returns the first error encountered. Check returns nil if all
 // Invariants passed without failing.
-func (a *Aggregate[S]) Check() []error {
+func (a *Aggregate[S]) Check() error {
+	for _, inv := range a.Invariants {
+		if err := inv(a); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// CheckAll checks all invariants of the aggregate and returns errors for every failed Invariants. CheckAll returns nil
+//if all Invariants passed without failing.
+func (a *Aggregate[S]) CheckAll() []error {
 	errs := make([]error, 0)
 
 	for _, inv := range a.Invariants {

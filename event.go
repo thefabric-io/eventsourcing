@@ -16,6 +16,20 @@ type Identifiable interface {
 	AggregateID() string
 }
 
+// InceptionRecorder represents an interface for entities that are capable
+// of recording the time at which they were brought into existence.
+type InceptionRecorder[S AggregateState] interface {
+	// RecordInception marks the time at which the entity was brought into existence.
+	RecordInception(inceptionTime *time.Time, aggregate *Aggregate[S])
+}
+
+// ModificationRecorder represents an interface for entities that are capable
+// of recording the time at which they were recently modified.
+type ModificationRecorder[S AggregateState] interface {
+	// RecordModification marks the time at which the entity was recently modified.
+	RecordModification(modificationTime *time.Time, aggregate *Aggregate[S])
+}
+
 type Metadata map[string]any
 
 type EventState[S AggregateState] interface {
@@ -121,6 +135,14 @@ func (e *Event[S]) Apply(aggregate *Aggregate[S]) {
 
 	if v, ok := e.State().(Identifiable); ok {
 		aggregate.id = v.AggregateID()
+	}
+
+	if v, ok := e.State().(InceptionRecorder[S]); ok {
+		v.RecordInception(&e.occurredAt, aggregate)
+	}
+
+	if v, ok := e.State().(ModificationRecorder[S]); ok {
+		v.RecordModification(&e.occurredAt, aggregate)
 	}
 
 	e.State().Apply(aggregate)

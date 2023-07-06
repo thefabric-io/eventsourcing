@@ -82,6 +82,22 @@ type EventState[S AggregateState] interface {...}
 type Identifiable interface {...}
 ```
 
+### InceptionRecorder
+
+`InceptionRecorder` is an interface representing objects that can record the inception date of an aggregate. It's used to ensure that the state of an event can record the inception date of an aggregate when the event is applied to an aggregate.
+
+```go
+type InceptionRecorder interface {...}
+```
+
+### ModificationRecorder
+
+`ModificationRecorder` is an interface representing objects that can record the modification date of an aggregate. It's used to ensure that the state of an event can record the modification date of an aggregate when the event is applied to an aggregate.
+
+```go
+type ModificationRecorder interface {...}
+```
+
 ## Usage
 
 To use this library, you would define your own aggregate states and event states that satisfy the `AggregateState` and `EventState` interfaces, respectively. Then, you can create events and apply them to aggregates, and store the aggregates in an event store.

@@ -2,6 +2,7 @@ package eventsourcing
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/segmentio/ksuid"
@@ -31,6 +32,20 @@ type ModificationRecorder[S AggregateState] interface {
 }
 
 type Metadata map[string]any
+
+func (m Metadata) Merge(m2 map[string]any) Metadata {
+	res := make(Metadata, 0)
+
+	for k, v := range m {
+		res[k] = v
+	}
+
+	for k, v := range m2 {
+		res[k] = v
+	}
+
+	return res
+}
 
 type EventState[S AggregateState] interface {
 	Type() string
@@ -145,6 +160,8 @@ func (e *Event[S]) Apply(aggregate *Aggregate[S]) {
 		v.RecordModification(&e.occurredAt, aggregate)
 	}
 
+	aggregate.metadata = aggregate.metadata.Merge(e.metadata)
+
 	e.State().Apply(aggregate)
 
 	e.aggregate = aggregate.Clone()
@@ -173,4 +190,15 @@ func (e *Event[S]) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(&res)
+}
+
+func ParseEvent[S AggregateState](t string, eventsMap map[string]EventState[S]) (EventState[S], error) {
+	var state S
+
+	e, exists := eventsMap[t]
+	if !exists {
+		return nil, errors.New(fmt.Sprintf("cannot parse event type '%s' for '%s' aggregate", t, state.Type()))
+	}
+
+	return e.(EventState[S]), nil
 }

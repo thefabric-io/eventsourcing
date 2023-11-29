@@ -10,6 +10,10 @@ type AggregateState interface {
 	Zero() AggregateState // Returns a zero value of the aggregate state.
 }
 
+type AggregateStateEventMapper[S AggregateState] interface {
+	EventsMap() map[string]EventState[S]
+}
+
 // InitZeroAggregate initializes an aggregate with the zero state.
 func InitZeroAggregate[S AggregateState](state S) *Aggregate[S] {
 	return &Aggregate[S]{
@@ -36,6 +40,7 @@ type Aggregate[S AggregateState] struct {
 	_type      string
 	state      S
 	changes    []*Event[S]
+	metadata  Metadata
 	Invariants []func(*Aggregate[S]) error
 }
 
@@ -54,6 +59,11 @@ func (a *Aggregate[S]) Clone() *Aggregate[S] {
 	}
 }
 
+// Metadata returns the metadata of the aggregate.
+func (a *Aggregate[S]) Metadata() Metadata {
+	return a.metadata
+}
+
 // MustAlso appends given invariants to the existing list of invariants.
 func (a *Aggregate[S]) MustAlso(ii ...func(*Aggregate[S]) error) {
 	a.Invariants = append(a.Invariants, ii...)
@@ -63,7 +73,6 @@ func (a *Aggregate[S]) MustAlso(ii ...func(*Aggregate[S]) error) {
 func (a *Aggregate[S]) Must(ii ...func(*Aggregate[S]) error) {
 	a.Invariants = ii
 }
-
 
 // Check checks all invariants of the aggregate and returns the first error encountered. Check returns nil if all
 // Invariants passed without failing.
@@ -78,7 +87,7 @@ func (a *Aggregate[S]) Check() error {
 }
 
 // CheckAll checks all invariants of the aggregate and returns errors for every failed Invariants. CheckAll returns nil
-//if all Invariants passed without failing.
+// if all Invariants passed without failing.
 func (a *Aggregate[S]) CheckAll() []error {
 	errs := make([]error, 0)
 

@@ -11,7 +11,7 @@ type Transaction interface {
 
 // EventStore represents a storage for events. It provides methods to save, load, and retrieve the history of an aggregate.
 type EventStore[S AggregateState] interface {
-	Save(ctx context.Context, tx Transaction, aggregate *Aggregate[S]) (err error)
+	Save(ctx context.Context, tx Transaction, aggregate ...*Aggregate[S]) (err error)
 	Load(ctx context.Context, tx Transaction, aggregateID string, version AggregateVersion) (*Aggregate[S], error)
 	History(ctx context.Context, tx Transaction, aggregateID string, fromVersion int, limit int) ([]*Event[S], error)
 }

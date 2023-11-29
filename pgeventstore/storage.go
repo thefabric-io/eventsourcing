@@ -15,18 +15,16 @@ import (
 
 const maxBatchSize = 500
 
-func Storage[S eventsourcing.AggregateState](parseEventTypeFunc func(t string) (eventsourcing.EventState[S], error)) eventsourcing.EventStore[S] {
+func Storage[S eventsourcing.AggregateState]() eventsourcing.EventStore[S] {
 	var aggregateState S
 
 	return &storage[S]{
 		aggregateState: aggregateState,
-		parseEventType: parseEventTypeFunc,
 	}
 }
 
 type storage[S eventsourcing.AggregateState] struct {
 	aggregateState S
-	parseEventType func(t string) (eventsourcing.EventState[S], error)
 }
 
 func (s *storage[S]) Load(ctx context.Context, transaction eventsourcing.Transaction, aggregateID string, version eventsourcing.AggregateVersion) (*eventsourcing.Aggregate[S], error) {
@@ -117,9 +115,14 @@ func (s *storage[S]) History(ctx context.Context, transaction eventsourcing.Tran
 
 		aggregate := eventsourcing.InitAggregate[S](e.ID.String, int(e.AggregateVersion.Int64), aggregateState)
 
-		evtType, err := s.parseEventType(e.Type.String)
-		if err != nil {
-			return nil, err
+		aggregateEventMapper, ok := any(aggregate.State()).(eventsourcing.AggregateStateEventMapper[S])
+		if !ok {
+			return nil, errors.New(fmt.Sprintf("cannot parse event type '%s' for '%s' aggregate: aggregate does not implement eventsourcing.AggregateStateEventMapper[S]", e.Type.String, aggregate.Type()))
+		}
+
+		evtType, exists := aggregateEventMapper.EventsMap()[e.Type.String]
+		if !exists {
+			return nil, errors.New(fmt.Sprintf("cannot parse event type '%s' for '%s' aggregate, the event type is not found: verify that your are parsing the event correctly in your aggregate state EventsMap() map[string]EventState[S] method", e.Type.String, aggregate.Type()))
 		}
 
 		evt, err := eventsourcing.InitEvent(e.ID.String, e.OccurredAt.Time, evtType, aggregate, e.State, e.Metadata)
@@ -133,8 +136,16 @@ func (s *storage[S]) History(ctx context.Context, transaction eventsourcing.Tran
 	return res, nil
 }
 
-func (s *storage[S]) Save(ctx context.Context, transaction eventsourcing.Transaction, aggregate *eventsourcing.Aggregate[S]) error {
-	events := aggregate.Changes()
+func (s *storage[S]) Save(ctx context.Context, transaction eventsourcing.Transaction, aggregate ...*eventsourcing.Aggregate[S]) error {
+	events := make([]*eventsourcing.Event[S], 0)
+	knownAggregates := make(map[string]bool)
+
+	for _, a := range aggregate {
+		if _, ok := knownAggregates[a.ID()]; !ok {
+			events = append(events, a.Changes()...)
+			knownAggregates[a.ID()] = true
+		}
+	}
 
 	sqlEvents := make([]*event, len(events))
 	for i, e := range events {

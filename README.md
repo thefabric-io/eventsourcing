@@ -98,6 +98,53 @@ type InceptionRecorder interface {...}
 type ModificationRecorder interface {...}
 ```
 
+### StorageNamer Interface
+
+The `v0.2.0` release introduces a significant enhancement to the Go Event Sourcing Library: the `StorageNamer` interface. This interface provides a customizable way for aggregates to define their corresponding storage entities, such as database tables or collections. This feature is especially beneficial as your project scales up, offering a more adaptable approach to storage naming conventions.
+
+#### Definition:
+
+```go
+type StorageNamer interface {
+    StorageName() string
+}
+```
+
+#### Usage:
+
+- Implement the `StorageNamer` interface in your aggregate state if you require a custom storage name different from the default aggregate state type name.
+- If an aggregate state does not implement `StorageNamer`, the library defaults to using the aggregate state's type as the storage identifier.
+
+#### Example:
+
+Suppose you have an aggregate state `UserState`. By default, the storage name would be `UserState`. If you need a different storage name, say `user_table`, implement the `StorageNamer` interface as shown below:
+
+```go
+type User struct {...}
+
+func (u *User) StorageName() string {
+    return "users"
+}
+
+func (u *User) Type() string {
+    return "user"
+}
+```
+
+This implementation allows `User` to explicitly specify `users` as its storage name.
+
+### Benefits of Using StorageNamer
+
+- **Explicit Naming**: Offers a clear and explicit way to define storage names, enhancing readability and maintainability of your code.
+- **Flexibility**: Adapts to various storage backends and user requirements, making the library more versatile.
+- **Backward Compatibility**: Ensures existing codebases remain functional without modifications.
+
+### Implementation Considerations
+
+- This interface is optional; you can choose to implement it based on your project's requirements.
+- Ensure consistency in the naming conventions used across your project for clarity.
+
+
 ## Usage
 
 To use this library, you would define your own aggregate states and event states that satisfy the `AggregateState` and `EventState` interfaces, respectively. Then, you can create events and apply them to aggregates, and store the aggregates in an event store.

@@ -120,18 +120,18 @@ type StorageNamer interface {
 Suppose you have an aggregate state `UserState`. By default, the storage name would be `UserState`. If you need a different storage name, say `user_table`, implement the `StorageNamer` interface as shown below:
 
 ```go
-type User struct {...}
+type UserState struct {...}
 
-func (u *User) StorageName() string {
-    return "users"
+func (u *UserState) StorageName() string {
+    return "user_table"
 }
 
-func (u *User) Type() string {
+func (u *UserState) Type() string {
     return "user"
 }
 ```
 
-This implementation allows `User` to explicitly specify `users` as its storage name.
+This implementation allows `UserState` to explicitly specify `user_table` as its storage name.
 
 ### Benefits of Using StorageNamer
 

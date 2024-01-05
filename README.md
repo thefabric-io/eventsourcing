@@ -110,7 +110,7 @@ The Go Event Sourcing Library includes a PostgreSQL implementation of the Event 
 
 The PostgreSQL Event Store implementation is located in the `pgeventstore` package, and includes the following key functionalities:
 
-1. **Database Setup and Initialization**: The library automatically loads environment variables for your database connection and schema name, and establishes a connection to the PostgreSQL server. If necessary, it will also create the schema and corresponding tables for the specified aggregates in your database.
+1. **Database Setup and Initialization**: The library must be initialized with the necessary environment variables or config for your database connection and schema name, and establishes a connection to the PostgreSQL server. If necessary, it will also create the schema and corresponding tables for the specified aggregates in your database.
 
 2. **Event Marshaling**: The library provides a mechanism to marshal your events into a format that can be stored in PostgreSQL. It takes care of null checks and type conversions, ensuring your data is safe and reliable.
 
@@ -124,7 +124,7 @@ The implementation also includes functionalities like creating the necessary tab
 
 The PostgreSQL Event Store implementation is designed to be highly scalable, capable of handling large volumes of events and providing fast query performance. It leverages PostgreSQL's capabilities for handling JSON data types, making it an ideal choice for Event Sourcing applications.
 
-For the detailed code of this implementation, please refer to the `pgeventstore` package in the source code. Be sure to set up your environment variables properly for your PostgreSQL server's URL and other necessary details before running your application.
+For the detailed code of this implementation, please refer to the `pgeventstore` package in the source code. Be sure to initialize library properly for your PostgreSQL server's URL and other necessary details before running your application.
 
 Remember to carefully handle your database connections and transactions to ensure data consistency and reliability. The library supports transaction management, allowing you to handle operations atomically and safely.
 
@@ -132,7 +132,7 @@ Remember to carefully handle your database connections and transactions to ensur
 
 ### Configuration
 
-The PostgreSQL Event Store implementation requires certain environment variables to be set for its proper functioning. These are:
+The PostgreSQL Event Store implementation requires certain config variables to be set for its proper functioning. These are:
 
 - `EVENT_STORE_PG_URL`: This should be the connection string for your PostgreSQL database. This must be a valid connection string that includes the username, password, host, port, and database name. For example, `postgresql://user:pass@localhost:5432/mydatabase`.
 
@@ -141,6 +141,19 @@ The PostgreSQL Event Store implementation requires certain environment variables
 - `EVENT_STORE_AGGREGATES`: A comma-separated list of all aggregate tables to be created in your PostgreSQL database. These tables will hold your events.
 
 For example, if you have a `user` and `order` aggregates, you can set `EVENT_STORE_AGGREGATES=user,order`.
+
+You can also initialize using pgeventstore.EventStorageConfig struct:
+```go
+config := pgeventstore.EventStorageConfig{
+    PostgresURL: "postgres://user:pass@localhost:5432?sslmode=disable",
+    Schema:      "eventsourcing",
+    Aggregates:  "user,order",
+}
+
+if err := pgeventstore.Init(config); err != nil {
+    return err
+}
+```
 
 The library uses the [godotenv](https://github.com/joho/godotenv) package for loading environment variables from a `.env` file. You can also set these environment variables manually in your deployment environment.
 

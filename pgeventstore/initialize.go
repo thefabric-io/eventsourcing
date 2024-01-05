@@ -13,22 +13,38 @@ import (
 
 var schema = "eventsourcing"
 
-func init() {
-	_ = godotenv.Load()
+type EventStorageConfig struct {
+	PostgresURL string
+	Schema      string
+	Aggregates  string
+}
 
-	pgURL := os.Getenv("EVENT_STORE_PG_URL")
-	if pgURL == "" {
-		panic(errors.New("database connection string is required in your environment variable definition under the key 'EVENT_STORE_PG_URL'"))
+func Init(optionalConfig ...EventStorageConfig) error {
+	if len(optionalConfig) == 0 {
+		_ = godotenv.Load()
+
+		optionalConfig = append(optionalConfig, EventStorageConfig{
+			PostgresURL: os.Getenv("EVENT_STORE_PG_URL"),
+			Schema:      os.Getenv("EVENT_STORE_SCHEMA"),
+			Aggregates:  os.Getenv("EVENT_STORE_AGGREGATES"),
+		})
+	} else if len(optionalConfig) > 1 {
+		return errors.New("only one config is allowed")
 	}
 
-	db, err := sqlx.Connect("postgres", pgURL)
+	config := optionalConfig[0]
+
+	if config.PostgresURL == "" {
+		return errors.New("database connection string is required")
+	}
+
+	db, err := sqlx.Connect("postgres", config.PostgresURL)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	envSchema := os.Getenv("EVENT_STORE_SCHEMA")
-	if envSchema != "" {
-		schema = envSchema
+	if config.Schema != "" {
+		schema = config.Schema
 	}
 
 	b := databaseBuilder{
@@ -37,20 +53,20 @@ func init() {
 
 	tx, err := db.Beginx()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	defer tx.Rollback()
 
-	aggregates := strings.Split(os.Getenv("EVENT_STORE_AGGREGATES"), ",")
-
-	if err := b.Build(aggregates, tx); err != nil {
-		panic(err)
+	if err := b.Build(strings.Split(config.Aggregates, ","), tx); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {
-		panic(err)
+		return err
 	}
+
+	return nil
 }
 
 type databaseBuilder struct {

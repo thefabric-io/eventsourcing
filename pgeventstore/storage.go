@@ -33,7 +33,7 @@ func (s *storage[S]) Load(ctx context.Context, transaction eventsourcing.Transac
 		id, occurred_at, registered_at, type,
 		aggregate_id, aggregate_version, aggregate_type,
 		aggregate_state, state, metadata
-	from %s.%s where aggregate_id = $1 and aggregate_type = $2`, schema, s.aggregateState.Type()))
+	from %s.%s where aggregate_id = $1 and aggregate_type = $2`, schema, eventsourcing.StorageName(s.aggregateState)))
 
 	values := make([]any, 0)
 	values = append(values, aggregateID)
@@ -80,10 +80,10 @@ func (s *storage[S]) History(ctx context.Context, transaction eventsourcing.Tran
 		id, occurred_at, registered_at, type,
 		aggregate_id, aggregate_version, aggregate_type,
 		aggregate_state, state, metadata
-	from %s.%s where aggregate_id = $1 and aggregate_type = $2`, schema, s.aggregateState.Type()))
+	from %s.%s where aggregate_id = $1 and aggregate_type = $2`, schema, eventsourcing.StorageName(s.aggregateState)))
 
 	values := make([]any, 0)
-	values = append(values, aggregateID, s.aggregateState.Type())
+	values = append(values, aggregateID, eventsourcing.StorageName(s.aggregateState))
 
 	if fromVersion != eventsourcing.LastVersion {
 		sb.WriteString(" and aggregate_version >= $3 ")
@@ -91,7 +91,7 @@ func (s *storage[S]) History(ctx context.Context, transaction eventsourcing.Tran
 	} else {
 		sb.WriteString(fmt.Sprintf(` and aggregate_version = 
 												(select max(aggregate_version) from %s.%s 
-												where aggregate_id = $1 and aggregate_type = $2)`, schema, s.aggregateState.Type()))
+												where aggregate_id = $1 and aggregate_type = $2)`, schema, eventsourcing.StorageName(s.aggregateState)))
 	}
 
 	sb.WriteString(fmt.Sprintf(" limit %d ", limit))
@@ -184,7 +184,7 @@ func (s *storage[S]) insertEvents(tx *sqlx.Tx, ee []*event) error {
 func (s *storage[S]) insertBatch(tx *sqlx.Tx, ee []*event) error {
 	query := fmt.Sprintf(`insert into %s.%s(
 		id, occurred_at, registered_at, type, aggregate_id, aggregate_version, aggregate_type, aggregate_state, state, metadata
-	) values `, schema, s.aggregateState.Type())
+	) values `, schema, eventsourcing.StorageName(s.aggregateState))
 
 	values := make([]any, 0)
 	for _, e := range ee {

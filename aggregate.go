@@ -10,6 +10,18 @@ type AggregateState interface {
 	Zero() AggregateState // Returns a zero value of the aggregate state.
 }
 
+type StorageNamer interface {
+	StorageName() string
+}
+
+func StorageName(s AggregateState) string {
+	if sn, ok := s.(StorageNamer); ok {
+		return sn.StorageName()
+	}
+
+	return s.Type()
+}
+
 type AggregateStateEventMapper[S AggregateState] interface {
 	EventsMap() map[string]EventState[S]
 }
@@ -40,7 +52,7 @@ type Aggregate[S AggregateState] struct {
 	_type      string
 	state      S
 	changes    []*Event[S]
-	metadata  Metadata
+	metadata   Metadata
 	Invariants []func(*Aggregate[S]) error
 }
 

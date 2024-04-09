@@ -30,6 +30,26 @@ This Go Event Sourcing Library offers a broad range of features to make implemen
 
 These features come together to provide a solid foundation for implementing the Event Sourcing pattern in your Go applications, facilitating efficient data change handling and thorough auditing of changes over time.
 
+Certainly! Here's a completed section that references the to-do list example as a practical illustration of how to use the event sourcing library:
+
+## Usage
+
+To use this library, you would define your own aggregate states and event states that satisfy the `AggregateState` and `EventState` interfaces, respectively. Then, you can create events and apply them to aggregates, and store the aggregates in an event store.
+
+### Usage Examples
+
+For a hands-on illustration of how to apply this library, check out our to-do list example. This repository demonstrates a simple yet effective implementation of event sourcing in a practical application: managing a to-do list. You'll see how aggregate and event states are defined and utilized within a Go application, providing a clear blueprint for incorporating event sourcing into your projects.
+
+- **Example Repository**: [Event Sourcing To-Do Example](https://github.com/thefabric-io/eventsourcing.example)
+
+In this example, you will learn how to:
+
+- Define aggregate states for your to-do items and event states for actions such as creating a to-do or adding a task.
+- Create and apply events to these aggregates, effectively demonstrating the event sourcing process.
+- Utilize the Command Query Responsibility Segregation (CQRS) pattern to separate the read and write operations of your application, enhancing its architecture and scalability.
+
+This example serves as a practical guide to understanding and implementing event sourcing with our library. By exploring the repository, you can gain insights into structuring your application for event sourcing and managing state through events in a real-world scenario.
+
 ## Main Components
 
 ### Aggregate
@@ -143,13 +163,6 @@ This implementation allows `UserState` to explicitly specify `user_table` as its
 
 - This interface is optional; you can choose to implement it based on your project's requirements.
 - Ensure consistency in the naming conventions used across your project for clarity.
-
-
-## Usage
-
-To use this library, you would define your own aggregate states and event states that satisfy the `AggregateState` and `EventState` interfaces, respectively. Then, you can create events and apply them to aggregates, and store the aggregates in an event store.
-
-**WIP, TODO: Add usage examples**
 
 ## PostgreSQL Event Store Implementation
 

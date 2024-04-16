@@ -58,7 +58,7 @@ func (s *storage[S]) Load(ctx context.Context, transaction eventsourcing.Transac
 	}
 
 	if len(events) == 0 {
-		return nil, errors.New(fmt.Sprintf("aggregate with id '%s' and version '%d' cannot be found", aggregateID, version))
+		return nil, eventsourcing.ErrAggregateNotFound
 	}
 
 	e := events[0]

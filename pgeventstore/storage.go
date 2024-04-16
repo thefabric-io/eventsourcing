@@ -203,7 +203,6 @@ func (s *storage[S]) insertBatch(tx *sqlx.Tx, ee []*event) error {
 		return "$" + strconv.Itoa(n)
 	})
 
-	tx.Preparex(query)
 	_, err := tx.Exec(query, values...)
 
 	return err

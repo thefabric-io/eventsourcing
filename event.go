@@ -148,6 +148,8 @@ func (e *Event[S]) Apply(aggregate *Aggregate[S]) {
 
 	aggregate.changes = append(aggregate.changes, e)
 
+	e.State().Apply(aggregate)
+
 	if v, ok := e.State().(Identifiable); ok {
 		aggregate.id = v.AggregateID()
 	}
@@ -161,8 +163,6 @@ func (e *Event[S]) Apply(aggregate *Aggregate[S]) {
 	}
 
 	aggregate.metadata = aggregate.metadata.Merge(e.metadata)
-
-	e.State().Apply(aggregate)
 
 	e.aggregate = aggregate.Clone()
 

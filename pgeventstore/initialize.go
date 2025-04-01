@@ -88,6 +88,10 @@ func (b *databaseBuilder) Build(aggregates []string, tx *sqlx.Tx) error {
 		if err := b.createTables(t, tx); err != nil {
 			return err
 		}
+
+		if err := ensureOffsetColumn(tx, schema, t); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -139,5 +143,54 @@ func (b *databaseBuilder) createTables(name string, tx *sqlx.Tx) error {
 		return err
 	}
 
+	return nil
+}
+
+func ensureOffsetColumn(tx *sqlx.Tx, schema, tableName string) error {
+	// Check if column exists
+	var exists bool
+	query := `
+        SELECT EXISTS (
+            SELECT 1 
+            FROM information_schema.columns 
+            WHERE table_schema = $1
+            AND table_name = $2 
+            AND column_name = $3
+        );`
+	err := tx.QueryRow(query, schema, tableName, "offset").Scan(&exists)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		// Create the column as nullable first
+		if _, err := tx.Exec(fmt.Sprintf(`
+            ALTER TABLE %s.%s ADD COLUMN "offset" BIGSERIAL;
+        `, schema, tableName)); err != nil {
+			return err
+		}
+
+		// Populate existing records
+		if _, err := tx.Exec(fmt.Sprintf(`
+            WITH numbered_events AS (
+                SELECT id, 
+                    ROW_NUMBER() OVER (ORDER BY occurred_at, registered_at) as row_num
+                FROM %s.%s
+            )
+            UPDATE %s.%s t
+            SET "offset" = n.row_num
+            FROM numbered_events n
+            WHERE t.id = n.id;
+        `, schema, tableName, schema, tableName)); err != nil {
+			return err
+		}
+
+		// Make it non-nullable after population
+		if _, err := tx.Exec(fmt.Sprintf(`
+            ALTER TABLE %s.%s ALTER COLUMN "offset" SET NOT NULL;
+        `, schema, tableName)); err != nil {
+			return err
+		}
+	}
 	return nil
 }

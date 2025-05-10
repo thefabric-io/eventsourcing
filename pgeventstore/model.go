@@ -10,14 +10,13 @@ import (
 // Update the event struct to include Offset
 type event struct {
 	ID               sql.NullString  `db:"id"`
-	Offset           sql.NullInt64   `db:"offset"` // New field
+	Offset           sql.NullInt64   `db:"offset"`
 	OccurredAt       sql.NullTime    `db:"occurred_at"`
 	RegisteredAt     sql.NullTime    `db:"registered_at"`
 	Type             sql.NullString  `db:"type"`
 	AggregateID      sql.NullString  `db:"aggregate_id"`
 	AggregateType    sql.NullString  `db:"aggregate_type"`
 	AggregateVersion sql.NullInt64   `db:"aggregate_version"`
-	Offset           sql.NullInt64   `db:"offset"`
 	AggregateState   json.RawMessage `db:"aggregate_state"`
 	State            json.RawMessage `db:"state"`
 	Metadata         json.RawMessage `db:"metadata"`

@@ -164,6 +164,8 @@ func (b *databaseBuilder) createEventsConsumersTable(tx *sqlx.Tx) error {
 	if _, err := tx.Exec(sb.String()); err != nil {
 		return err
 	}
+
+	return nil
 }
 
 func ensureOffsetColumn(tx *sqlx.Tx, schema, tableName string) error {
@@ -212,6 +214,6 @@ func ensureOffsetColumn(tx *sqlx.Tx, schema, tableName string) error {
 			return err
 		}
 	}
-  
+
 	return nil
 }

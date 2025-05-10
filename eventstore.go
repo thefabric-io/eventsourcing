@@ -14,6 +14,7 @@ type EventStore[S AggregateState] interface {
 	Save(ctx context.Context, tx Transaction, aggregate ...*Aggregate[S]) (err error)
 	Load(ctx context.Context, tx Transaction, aggregateID string, version AggregateVersion) (*Aggregate[S], error)
 	History(ctx context.Context, tx Transaction, aggregateID string, fromVersion int, limit int) ([]*Event[S], error)
+	Events(ctx context.Context, tx Transaction, params EventsParams) ([]*Event[S], error)
 }
 
 type LoadParams[S AggregateState] struct {
@@ -25,6 +26,12 @@ type LoadParams[S AggregateState] struct {
 type HistoryParams struct {
 	AggregateID      string
 	AggregateVersion AggregateVersion
+}
+
+type EventsParams struct {
+	AfterOffset int
+	TypesOnly   []string
+	Limit       int
 }
 
 type AggregateVersion int

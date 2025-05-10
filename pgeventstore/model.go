@@ -7,8 +7,10 @@ import (
 	"time"
 )
 
+// Update the event struct to include Offset
 type event struct {
 	ID               sql.NullString  `db:"id"`
+	Offset           sql.NullInt64   `db:"offset"` // New field
 	OccurredAt       sql.NullTime    `db:"occurred_at"`
 	RegisteredAt     sql.NullTime    `db:"registered_at"`
 	Type             sql.NullString  `db:"type"`

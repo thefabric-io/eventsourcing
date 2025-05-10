@@ -65,7 +65,7 @@ func NewEvent[S AggregateState](event EventState[S], metadata map[string]any) *E
 }
 
 // InitEvent initializes an Event with provided id, occurredAt, state, aggregate, data, and metadata.
-func InitEvent[S AggregateState](id string, occurredAt time.Time, state EventState[S], aggregate *Aggregate[S], data []byte, metadata []byte) (*Event[S], error) {
+func InitEvent[S AggregateState](id string, occurredAt time.Time, state EventState[S], aggregate *Aggregate[S], data []byte, offset int, metadata []byte) (*Event[S], error) {
 	if err := json.Unmarshal(data, state); err != nil {
 		return nil, err
 	}
@@ -82,6 +82,7 @@ func InitEvent[S AggregateState](id string, occurredAt time.Time, state EventSta
 		_type:      state.Type(),
 		aggregate:  aggregate,
 		state:      state,
+		offset:     offset,
 		metadata:   mtd,
 	}, nil
 }
@@ -93,6 +94,7 @@ type Event[S AggregateState] struct {
 	_type      string
 	aggregate  *Aggregate[S]
 	state      EventState[S]
+	offset     int
 	metadata   Metadata
 }
 
@@ -104,6 +106,11 @@ func (e *Event[S]) ID() string {
 // Type returns the type of the event.
 func (e *Event[S]) Type() string {
 	return e._type
+}
+
+// Offset returns the offset of the event.
+func (e *Event[S]) Offset() int {
+	return e.offset
 }
 
 // Aggregate returns the aggregate associated with the event.
@@ -177,6 +184,7 @@ func (e *Event[S]) MarshalJSON() ([]byte, error) {
 		Type       string        `json:"type"`
 		Aggregate  *Aggregate[S] `json:"aggregate"`
 		State      EventState[S] `json:"state"`
+		Offset     int           `json:"offset"`
 		Metadata   Metadata      `json:"metadata,omitempty"`
 	}
 
@@ -186,6 +194,7 @@ func (e *Event[S]) MarshalJSON() ([]byte, error) {
 		Type:       e._type,
 		Aggregate:  e.aggregate,
 		State:      e.State(),
+		Offset:     e.offset,
 		Metadata:   e.metadata,
 	}
 

@@ -221,6 +221,111 @@ For security reasons, make sure that your database connection string (`EVENT_STO
 
 Remember to restart your application after changing your environment variables to ensure the changes take effect.
 
+## Event Consumer Mechanism
+
+### Overview
+
+The `eventconsumer` package provides a robust and easy-to-use mechanism for consuming events from an event-sourced system. It is designed to help you build projections, background processors, and other event-driven components that need to reliably process events with offset tracking and at-least-once delivery semantics.
+
+The `eventconsumer/pgeventconsumer` package offers a PostgreSQL-backed implementation for storing consumer offsets, making it easy to persist and recover consumer state across restarts.
+
+### Why Use This Mechanism?
+
+- **Reliable Offset Tracking:** Ensures that each event is processed exactly once per consumer group, even in the face of failures.
+- **Easy Integration:** Simple interfaces for registering handlers and starting consumers.
+- **Supports Projections:** Ideal for building read models and projections that need to process all events in order.
+- **Pluggable Storage:** Use the provided PostgreSQL implementation or create your own by implementing the `ConsumerStore` interface.
+
+### How It Works
+
+- **ConsumerStore:** Abstracts the storage and retrieval of consumer offsets. The `pgeventconsumer` package provides a ready-to-use implementation for PostgreSQL.
+- **Subscriber:** Represents a consumer that processes events. You register handlers for event types, and the subscriber manages fetching and dispatching events to the appropriate handler.
+- **Manager:** Allows you to manage and run multiple subscribers concurrently.
+
+#### Main Interfaces
+
+```go
+// ConsumerStore is an interface for storing and retrieving consumer offsets.
+type ConsumerStore interface {
+    Save(ctx context.Context, transaction transactional.Transaction, name string, offsetAcked, offsetConsumed int) error
+    Load(ctx context.Context, transaction transactional.Transaction, name string) (Consumer, error)
+}
+
+// Subscriber is responsible for receiving and processing messages.
+type Subscriber[S eventsourcing.AggregateState] interface {
+    Start(ctx context.Context) error
+    RegisterHandler(messageType string, handler Handler[S])
+    UnregisterHandler(messageType string) error
+    Status() ConsumerStatus
+}
+```
+
+#### PostgreSQL Implementation
+
+The `pgeventconsumer` package provides a `PostgresConsumerStore` that persists consumer offsets in a PostgreSQL table. This allows consumers to resume processing from the last acknowledged event after a restart.
+
+### Usage Example
+
+```go
+import (
+    "context"
+
+    "github.com/thefabric-io/eventsourcing"
+    "github.com/thefabric-io/eventsourcing/eventconsumer"
+    "github.com/thefabric-io/eventsourcing/eventconsumer/pgeventconsumer"
+    "github.com/thefabric-io/eventsourcing/pgeventstore"
+    "github.com/thefabric-io/transactional"
+    "github.com/thefabric-io/transactional/pgtransactional"
+    
+
+    )
+
+// Define your aggregate state and event handler
+type MyAggregateState struct{}
+
+// Implement eventconsumer.Handler for your event type
+type MyHandler struct{}
+func (h *MyHandler) HandleEvent(ctx context.Context, tx transactional.Transaction, ev *eventsourcing.Event[*MyAggregateState]) error {
+    // Process the event
+    return nil
+}
+
+func main() {
+    ctx := context.Background()
+	
+    tx, err := pgtransactional.InitSQLXTransactionalConnection(ctx, os.Getenv("TRANSACTIONAL_DATABASE_URL"))
+    if err != nil {
+        log.Fatalln(err)
+    }
+	
+    eventStore := pgeventstore.Storage[*MyAggregateState]()
+    consumerStore := pgeventconsumer.PostgresConsumerStore()
+
+    params := eventconsumer.NewFIFOSubscriberParams[MyAggregateState]{
+        Name:             "my-consumer-group",
+        ConsumerStore:    consumerStore,
+        EventStore:       eventStore,
+        BatchSize:        100,
+        WaitTime:         1 * time.Second,
+        WaitTimeIfEvents: 100 * time.Millisecond,
+    }
+
+    subscriber := eventconsumer.NewFIFOConsumer(ctx, tx, params)
+    subscriber.RegisterHandler("MyEventType", &MyHandler{})
+
+    manager := eventconsumer.NewManager[MyAggregateState]()
+    manager.AddProcessors(subscriber)
+    manager.Run(ctx)
+}
+```
+
+### Technical Details
+
+- The FIFO consumer fetches events in batches, processes them using registered handlers, and updates the consumer offset in the store.
+- If no events are available, it waits for a configurable duration before polling again.
+- The PostgreSQL consumer store uses an upsert strategy to persist offsets, ensuring idempotency and reliability.
+
+
 ## Contributing
 
 Feel free to submit a pull request if you find any bugs or you want to make improvements to the library. For major changes, please open an issue first to discuss what you would like to change.

@@ -17,6 +17,7 @@ type event struct {
 	AggregateID      sql.NullString  `db:"aggregate_id"`
 	AggregateType    sql.NullString  `db:"aggregate_type"`
 	AggregateVersion sql.NullInt64   `db:"aggregate_version"`
+	Offset           sql.NullInt64   `db:"offset"`
 	AggregateState   json.RawMessage `db:"aggregate_state"`
 	State            json.RawMessage `db:"state"`
 	Metadata         json.RawMessage `db:"metadata"`

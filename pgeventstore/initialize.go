@@ -94,6 +94,11 @@ func (b *databaseBuilder) Build(aggregates []string, tx *sqlx.Tx) error {
 		}
 	}
 
+	err := b.createEventsConsumersTable(tx)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -146,6 +151,21 @@ func (b *databaseBuilder) createTables(name string, tx *sqlx.Tx) error {
 	return nil
 }
 
+func (b *databaseBuilder) createEventsConsumersTable(tx *sqlx.Tx) error {
+	sb := strings.Builder{}
+	sb.WriteString(fmt.Sprintf(`create table if not exists %s.events_consumers(
+				consumer_group VARCHAR(255) NOT NULL,
+				aggregate_type varchar,
+				offset_acked BIGINT,
+				offset_consumed BIGINT NOT NULL,
+				last_occurred_at timestamptz,
+				PRIMARY KEY(consumer_group, aggregate_type));`, schema))
+
+	if _, err := tx.Exec(sb.String()); err != nil {
+		return err
+	}
+}
+
 func ensureOffsetColumn(tx *sqlx.Tx, schema, tableName string) error {
 	// Check if column exists
 	var exists bool
@@ -192,5 +212,6 @@ func ensureOffsetColumn(tx *sqlx.Tx, schema, tableName string) error {
 			return err
 		}
 	}
+  
 	return nil
 }

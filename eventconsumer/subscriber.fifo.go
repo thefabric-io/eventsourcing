@@ -53,41 +53,55 @@ func (pb *fifoConsumer[S]) Start(ctx context.Context) error {
 	logrus.Info(pb, "fifoConsumer started")
 
 	for {
-		tx, err := pb.transactional.BeginTransaction(ctx, transactional.BeginTransactionOptions{
-			AccessMode:     transactional.ReadWrite,
-			IsolationLevel: transactional.Serializable,
-			DeferrableMode: transactional.NotDeferrable,
-		})
-		if err != nil {
-			logrus.Error("error beginning transaction", err)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logrus.Errorf("panic recovered in fifoConsumer: %v", r)
+					pb.wait("panic recovered, restarting loop")
+				}
+			}()
 
-			pb.wait(err.Error())
+			if ctx.Err() != nil {
+				return
+			}
 
-			continue
-		}
+			tx, err := pb.transactional.BeginTransaction(ctx, transactional.BeginTransactionOptions{
+				AccessMode:     transactional.ReadWrite,
+				IsolationLevel: transactional.Serializable,
+				DeferrableMode: transactional.NotDeferrable,
+			})
+			if err != nil {
+				logrus.Error("error beginning transaction: ", err)
+				pb.wait(err.Error())
+				return
+			}
 
-		eventRetrieved, err := pb.processEvents(ctx, tx)
-		if err != nil {
-			logrus.Error("error processing events", err)
+			eventRetrieved, err := pb.processEvents(ctx, tx)
+			if err != nil {
+				logrus.Error("error processing events: ", err)
+				_ = tx.Rollback()
+				pb.wait(err.Error())
+				return
+			}
 
-			pb.wait(err.Error())
+			if err := tx.Commit(); err != nil {
+				logrus.Error("error committing transaction: ", err)
+				_ = tx.Rollback()
+				pb.wait(err.Error())
+				return
+			}
 
-			continue
-		}
+			// If no events are retrieved, wait for the specified duration
+			if eventRetrieved == 0 {
+				time.Sleep(pb.waitTime)
+			} else {
+				time.Sleep(pb.waitTimeIfEvents)
+			}
+		}()
 
-		if err := tx.Commit(); err != nil {
-			logrus.Error("error committing transaction", err)
-
-			pb.wait(err.Error())
-
-			continue
-		}
-
-		// If no events are retrieved, wait for the specified duration
-		if eventRetrieved == 0 {
-			time.Sleep(pb.waitTime)
-		} else {
-			time.Sleep(pb.waitTimeIfEvents)
+		// Check for context cancellation after recovering from panic
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 	}
 }

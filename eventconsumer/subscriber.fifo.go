@@ -2,6 +2,7 @@ package eventconsumer
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ type fifoConsumer[S eventsourcing.AggregateState] struct {
 	batchSize        int
 	waitTime         time.Duration
 	waitTimeIfEvents time.Duration
+	isolationLevel   transactional.TxIsoLevel
 }
 
 type NewFIFOSubscriberParams[S eventsourcing.AggregateState] struct {
@@ -30,9 +32,10 @@ type NewFIFOSubscriberParams[S eventsourcing.AggregateState] struct {
 	BatchSize        int
 	WaitTime         time.Duration
 	WaitTimeIfEvents time.Duration
+	isolationLevel   transactional.TxIsoLevel
 }
 
-func NewFIFOConsumer[S eventsourcing.AggregateState](ctx context.Context, tx transactional.Transactional, p NewFIFOSubscriberParams[S]) Subscriber[S] {
+func NewFIFOConsumer[S eventsourcing.AggregateState](_ context.Context, tx transactional.Transactional, p NewFIFOSubscriberParams[S]) Subscriber[S] {
 	s := &fifoConsumer[S]{
 		transactional:    tx,
 		name:             p.Name,
@@ -44,6 +47,11 @@ func NewFIFOConsumer[S eventsourcing.AggregateState](ctx context.Context, tx tra
 		batchSize:        p.BatchSize,
 		waitTime:         p.WaitTime,
 		waitTimeIfEvents: p.WaitTimeIfEvents,
+		isolationLevel:   transactional.RepeatableRead,
+	}
+
+	if len(strings.TrimSpace(p.isolationLevel.String())) > 0 {
+		s.isolationLevel = p.isolationLevel
 	}
 
 	return s

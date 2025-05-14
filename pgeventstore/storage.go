@@ -232,7 +232,7 @@ func (s *storage[S]) parseEvents(events []event) ([]*eventsourcing.Event[S], err
 			return nil, err
 		}
 
-		aggregate := eventsourcing.InitAggregate[S](e.ID.String, int(e.AggregateVersion.Int64), aggregateState)
+		aggregate := eventsourcing.InitAggregate[S](e.AggregateID.String, int(e.AggregateVersion.Int64), aggregateState)
 
 		aggregateEventMapper, ok := any(aggregate.State()).(eventsourcing.AggregateStateEventMapper[S])
 		if !ok {

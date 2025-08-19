@@ -184,7 +184,7 @@ The implementation also includes functionalities like creating the necessary tab
 
 The PostgreSQL Event Store implementation is designed to be highly scalable, capable of handling large volumes of events and providing fast query performance. It leverages PostgreSQL's capabilities for handling JSON data types, making it an ideal choice for Event Sourcing applications.
 
-For the detailed code of this implementation, please refer to the `pgeventstore` package in the source code. Be sure to initialize library properly for your PostgreSQL server's URL and other necessary details before running your application.
+For the detailed code and usage, see the `pgeventstore/README.md`. Be sure to initialize the library properly for your PostgreSQL server's URL and schema before running your application.
 
 Remember to carefully handle your database connections and transactions to ensure data consistency and reliability. The library supports transaction management, allowing you to handle operations atomically and safely.
 
@@ -229,6 +229,15 @@ The `eventconsumer` package provides a robust and easy-to-use mechanism for cons
 
 The `eventconsumer/pgeventconsumer` package offers a PostgreSQL-backed implementation for storing consumer offsets, making it easy to persist and recover consumer state across restarts.
 
+### Packages
+
+- `eventsourcing` (root): core primitives (`Aggregate`, `Event`, `EventStore`, invariants, metadata, `StorageNamer`).
+- `pgeventstore`: PostgreSQL implementation of `EventStore` with `Init` bootstrap and `Storage[S]()` factory.
+- `eventconsumer`: subscribers for consuming events in order with at-least-once delivery.
+  - `AsyncSequentialSubscriber` (non-transactional handlers)
+  - `FIFOSubscriber` (transactional handlers)
+- `eventconsumer/pgeventconsumer`: PostgreSQL `ConsumerStore` and a convenience constructor for the async subscriber.
+
 ### Why Use This Mechanism?
 
 - **Reliable Offset Tracking:** Ensures that each event is processed exactly once per consumer group, even in the face of failures.
@@ -251,11 +260,10 @@ type ConsumerStore interface {
     Load(ctx context.Context, transaction transactional.Transaction, name string) (Consumer, error)
 }
 
-// Subscriber is responsible for receiving and processing messages.
+// Subscriber starts and reports status; concrete subscribers expose their own
+// RegisterHandler variant matching the handler type they support (Handler or TxHandler).
 type Subscriber[S eventsourcing.AggregateState] interface {
     Start(ctx context.Context) error
-    RegisterHandler(messageType string, handler Handler[S])
-    UnregisterHandler(messageType string) error
     Status() ConsumerStatus
 }
 ```
@@ -283,9 +291,9 @@ import (
 // Define your aggregate state and event handler
 type MyAggregateState struct{}
 
-// Implement eventconsumer.Handler for your event type
+// Implement eventconsumer.Handler (async, no transaction) for your event type
 type MyHandler struct{}
-func (h *MyHandler) HandleEvent(ctx context.Context, tx transactional.Transaction, ev *eventsourcing.Event[*MyAggregateState]) error {
+func (h *MyHandler) HandleEvent(ctx context.Context, ev *eventsourcing.Event[*MyAggregateState]) error {
     // Process the event
     return nil
 }
@@ -301,23 +309,143 @@ func main() {
     eventStore := pgeventstore.Storage[*MyAggregateState]()
     consumerStore := pgeventconsumer.PostgresConsumerStore()
 
-    params := eventconsumer.NewFIFOSubscriberParams[MyAggregateState]{
-        Name:             "my-consumer-group",
-        ConsumerStore:    consumerStore,
-        EventStore:       eventStore,
-        BatchSize:        100,
-        WaitTime:         1 * time.Second,
-        WaitTimeIfEvents: 100 * time.Millisecond,
-    }
+    params := eventconsumer.NewAsyncSequentialParams[*MyAggregateState](
+        tx,
+        "my-consumer-group",
+        consumerStore,
+        eventStore,
+    )
+    subscriber := eventconsumer.NewAsyncSequentialSubscriber[*MyAggregateState](
+        ctx,
+        params,
+        eventconsumer.WithBatchSize[*MyAggregateState](100),
+        eventconsumer.WithWaitTimes[*MyAggregateState](1*time.Second, 100*time.Millisecond),
+        eventconsumer.WithAckBatch[*MyAggregateState](10, 500*time.Millisecond),
+    )
 
-    subscriber := eventconsumer.NewFIFOConsumer(ctx, tx, params)
-    subscriber.RegisterHandler("MyEventType", &MyHandler{})
+    // Register handlers
+    subscriber.RegisterHandler("my-event", &MyHandler{})
 
-    manager := eventconsumer.NewManager[MyAggregateState]()
+    manager := eventconsumer.NewManager[*MyAggregateState]()
     manager.AddProcessors(subscriber)
     manager.Run(ctx)
 }
 ```
+
+### AsyncSequentialSubscriber (Non-Blocking, Sequential)
+
+The `AsyncSequentialSubscriber` processes events strictly in order while keeping your handler work outside of any database transaction. It is ideal for long-running side effects (HTTP calls, e-mails, ML inference) and high-contention systems where you want to minimize time spent under DB locks.
+
+- Fetches the next page of events after the last ACKed offset inside a short transaction, then closes that transaction before handing events to handlers.
+- Processes events one-by-one, in order, using registered handlers. If a handler is missing for a type, the event is auto-acknowledged so the cursor can advance.
+- Acknowledges progress via a dedicated ack loop that batches contiguous offsets and commits them atomically. The cursor never skips a missing offset by default (no-skip semantics).
+- Handles retention gaps and non-1 starting offsets: when the first visible offset is ahead of the expected next, the subscriber safely fast‑forwards the starting point to the first seen offset and continues contiguously from there.
+- Built-in back-pressure: bounded in-memory queues; non-blocking enqueue with jittered, context-aware backoff; adaptive post-fetch sleep based on queue fill.
+- Clean shutdown: closes channels, drains queues, and flushes outstanding acks deterministically.
+- Optional per-event handler timeout to bound shutdown latency (default disabled).
+
+Configuration highlights (constructor params):
+- `batchSize`: number of events to fetch per poll (also influences queue sizes)
+- `waitTime` / `waitTimeIfEvents`: polling cadence when idle vs after processing
+- `ackBatchSize` / `ackBatchTimeout`: batch size and max delay for ack flushing (set timeout to 0 to flush every ack)
+- `SetHandlerTimeout(d)`: optional per‑event timeout; set to 0 to disable
+
+When to use
+- Handlers perform IO or heavy work and must not hold DB transactions
+- You need strict in-order processing with at-least-once delivery
+- You want resilient shutdown and strong back-pressure under bursty loads
+
+### FIFO Consumer (Transactional, Sequential)
+
+The `FIFO` (First-In-First-Out) consumer processes events strictly in order while keeping a database transaction open for the duration of each batch and each handler call. This is a good fit when handler logic must be performed atomically within the same DB transaction as the offset update (e.g., transactional projections).
+
+- Opens a transaction per polling cycle (Serializable by default), loads the consumer, and fetches events after the last ACKed offset for the registered types.
+- Processes events sequentially inside that transaction and calls your `TxHandler` with the live `tx`.
+- On success, updates both `offset_acked` and `offset_consumed` (to the last processed offset of the batch) in the same transaction and commits.
+- On error/panic, the transaction is rolled back and nothing is persisted; events will be retried on the next loop.
+- Sleeps `waitTime` when no events were fetched, otherwise `waitTimeIfEvents` before the next poll.
+- Register handlers with `RegisterHandlerTx(eventType, TxHandler)` and implement `TxHandler`.
+
+When to use
+- You require strict transactional consistency between handler writes and offset updates.
+- Handlers are short-lived and safe to run under an open DB transaction.
+- You prefer simpler flow without in-memory buffering/back-pressure.
+
+#### AsyncSequentialSubscriber vs FIFO consumer
+
+- Transaction scope:
+  - AsyncSequential: handler runs outside any DB transaction; only short transactions are used to fetch events and to persist acks.
+  - FIFO: handler runs inside a transaction that remains open for the duration of the handler call; offsets are persisted at the end of the batch.
+
+- Ordering and acks:
+  - Both are sequential and preserve event order per consumer-group.
+  - AsyncSequential auto-acks unhandled types and uses a dedicated, batched ack loop with contiguous-ack logic and gap bootstrap (handles streams starting at 0 or after retention).
+  - FIFO fetches only types with registered handlers and updates offsets once per batch inside the processing transaction.
+
+- Back-pressure and shutdown:
+  - AsyncSequential provides bounded queues, non-blocking enqueue with backoff, adaptive sleeps, and deterministic channel-based shutdown.
+  - FIFO performs straightforward loop processing inside a transaction and sleeps between polls; it does not buffer work.
+
+- When to pick which:
+  - Choose AsyncSequential when handlers can be slow or you want minimal lock time in the DB.
+  - Choose FIFO when handlers must participate in the same DB transaction as the fetch (e.g., strictly transactional projections) and handler latency is short.
+
+#### FIFO usage example
+
+```go
+// Implement eventconsumer.TxHandler for your event type
+type MyTxHandler struct{}
+func (h *MyTxHandler) HandleEvent(ctx context.Context, tx transactional.Transaction, ev *eventsourcing.Event[*MyAggregateState]) error {
+    // Perform writes in the same DB transaction
+    return nil
+}
+
+fifo := eventconsumer.NewFIFOSubscriber[*MyAggregateState](
+    ctx,
+    tx,
+    eventconsumer.NewFIFOSubscriberParams[*MyAggregateState]{
+        Name:             "my-consumer-group",
+        ConsumerStore:    pgeventconsumer.PostgresConsumerStore(),
+        EventStore:       pgeventstore.Storage[*MyAggregateState](),
+        BatchSize:        100,
+        WaitTime:         1 * time.Second,
+        WaitTimeIfEvents: 100 * time.Millisecond,
+    },
+)
+fifo.RegisterHandlerTx("my-event", &MyTxHandler{})
+
+manager := eventconsumer.NewManager[*MyAggregateState]()
+manager.AddProcessors(fifo)
+manager.Run(ctx)
+```
+
+#### Handler interfaces (v0.x breaking change)
+
+```go
+// Async (no transaction)
+type Handler[S eventsourcing.AggregateState] interface {
+    HandleEvent(ctx context.Context, ev *eventsourcing.Event[S]) error
+}
+
+// FIFO (transaction available)
+type TxHandler[S eventsourcing.AggregateState] interface {
+    HandleEvent(ctx context.Context, tx transactional.Transaction, ev *eventsourcing.Event[S]) error
+}
+
+// Adapter to reuse a TxHandler with the async subscriber
+func FromTxHandler[S eventsourcing.AggregateState](h TxHandler[S]) Handler[S]
+```
+
+Registering:
+- Async: `subscriber.RegisterHandler("type", myAsyncHandler)` or `FromTxHandler(myTxHandler)`
+- FIFO:  `fifo.RegisterHandlerTx("type", myTxHandler)`
+
+### Breaking changes (latest)
+
+- Split handler interfaces: use `Handler[S]` for async processing and `TxHandler[S]` for transactional processing. If you previously had a single handler signature, implement the appropriate interface or wrap `TxHandler` with `FromTxHandler` when using the async subscriber.
+- AsyncSequentialSubscriber constructor now uses a parameter object and functional options. Migrate to `NewAsyncSequentialParams(...)` + `NewAsyncSequentialSubscriber(ctx, params, ...)` or the convenience constructor in `eventconsumer/pgeventconsumer`.
+- Introduced `StorageNamer` to customize table names; defaults remain backward compatible.
+- Added global `offset` and `Events` API on `pgeventstore` for cross‑aggregate streaming; consumers should prefer offsets over per‑aggregate versions when building projections.
 
 ### Technical Details
 

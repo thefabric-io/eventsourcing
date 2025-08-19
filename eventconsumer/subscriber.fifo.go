@@ -11,12 +11,12 @@ import (
 	"github.com/thefabric-io/transactional"
 )
 
-type fifoConsumer[S eventsourcing.AggregateState] struct {
+type FIFOSubscriber[S eventsourcing.AggregateState] struct {
 	transactional    transactional.Transactional
 	name             string
 	consumerStore    ConsumerStore
 	eventStore       eventsourcing.EventStore[S]
-	handlers         map[string]Handler[S]
+	handlers         map[string]TxHandler[S]
 	handlersLock     sync.RWMutex
 	processedCount   int
 	batchSize        int
@@ -35,13 +35,13 @@ type NewFIFOSubscriberParams[S eventsourcing.AggregateState] struct {
 	isolationLevel   transactional.TxIsoLevel
 }
 
-func NewFIFOConsumer[S eventsourcing.AggregateState](_ context.Context, tx transactional.Transactional, p NewFIFOSubscriberParams[S]) Subscriber[S] {
-	s := &fifoConsumer[S]{
+func NewFIFOSubscriber[S eventsourcing.AggregateState](_ context.Context, tx transactional.Transactional, p NewFIFOSubscriberParams[S]) *FIFOSubscriber[S] {
+	s := &FIFOSubscriber[S]{
 		transactional:    tx,
 		name:             p.Name,
 		consumerStore:    p.ConsumerStore,
 		eventStore:       p.EventStore,
-		handlers:         make(map[string]Handler[S]),
+		handlers:         make(map[string]TxHandler[S]),
 		handlersLock:     sync.RWMutex{},
 		processedCount:   0,
 		batchSize:        p.BatchSize,
@@ -57,7 +57,7 @@ func NewFIFOConsumer[S eventsourcing.AggregateState](_ context.Context, tx trans
 	return s
 }
 
-func (pb *fifoConsumer[S]) Start(ctx context.Context) error {
+func (pb *FIFOSubscriber[S]) Start(ctx context.Context) error {
 	logrus.Info(pb, "fifoConsumer started")
 
 	for {
@@ -114,13 +114,13 @@ func (pb *fifoConsumer[S]) Start(ctx context.Context) error {
 	}
 }
 
-func (pb *fifoConsumer[S]) wait(cause string) {
+func (pb *FIFOSubscriber[S]) wait(cause string) {
 	logrus.Info(pb, cause)
 
 	time.Sleep(pb.waitTime)
 }
 
-func (pb *fifoConsumer[S]) processEvents(ctx context.Context, tx transactional.Transaction) (int, error) {
+func (pb *FIFOSubscriber[S]) processEvents(ctx context.Context, tx transactional.Transaction) (int, error) {
 	consumer, err := pb.consumerStore.Load(ctx, tx, pb.name)
 	if err != nil {
 		return 0, err
@@ -165,14 +165,14 @@ func (pb *fifoConsumer[S]) processEvents(ctx context.Context, tx transactional.T
 	return eventRetrieved, nil
 }
 
-func (pb *fifoConsumer[S]) RegisterHandler(eventType string, handler Handler[S]) {
+func (pb *FIFOSubscriber[S]) RegisterHandlerTx(eventType string, handler TxHandler[S]) {
 	pb.handlersLock.Lock()
 	defer pb.handlersLock.Unlock()
 
 	pb.handlers[eventType] = handler
 }
 
-func (pb *fifoConsumer[S]) UnregisterHandler(eventType string) error {
+func (pb *FIFOSubscriber[S]) UnregisterHandler(eventType string) error {
 	pb.handlersLock.Lock()
 	defer pb.handlersLock.Unlock()
 
@@ -181,13 +181,13 @@ func (pb *fifoConsumer[S]) UnregisterHandler(eventType string) error {
 	return nil
 }
 
-func (pb *fifoConsumer[S]) Status() ConsumerStatus {
+func (pb *FIFOSubscriber[S]) Status() ConsumerStatus {
 	return ConsumerStatus{
 		ProcessedEventCount: pb.processedCount,
 	}
 }
 
-func (pb *fifoConsumer[S]) eventTypesProcessing() []string {
+func (pb *FIFOSubscriber[S]) eventTypesProcessing() []string {
 	keys := make([]string, 0, len(pb.handlers))
 	for k := range pb.handlers {
 		keys = append(keys, k)
